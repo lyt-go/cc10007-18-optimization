@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Any, Generic, TypeVar
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 T = TypeVar("T")
 
@@ -26,6 +26,18 @@ class EntryPayload(BaseModel):
 
     values: dict[str, Any] = Field(default_factory=dict)
     remark: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def hoist_flat_action(cls, data: Any) -> Any:
+        """兼容早期前端把 action 平铺提交的调用链：动作字段统一收进 values。"""
+        if isinstance(data, dict):
+            flat_action = data.pop("action", None)
+            if flat_action is not None:
+                values = dict(data.get("values") or {})
+                values.setdefault("action", flat_action)
+                data["values"] = values
+        return data
 
 
 

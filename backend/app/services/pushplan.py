@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.services.freqctrl import FreqctrlService
 from app.store import store
 
 MODULE = "pushplan"
@@ -10,6 +11,8 @@ REQUIRED_FIELDS = ["方案编号", "推送内容", "目标人群"]
 STATUS_ORDER = ["草稿", "方案审批中", "执行中", "已完成", "已撤回"]
 ACTION_RULES = {"提交方案审批": "方案审批中", "启动推送": "执行中", "撤回推送": "已撤回"}
 NEGATIVE_ACTIONS = []
+
+freqctrl = FreqctrlService()
 
 
 class PushplanService:
@@ -28,7 +31,12 @@ class PushplanService:
             rows = [row for row in rows if row.get("status") == status]
         total = len(rows)
         start = max(page - 1, 0) * size
-        return rows[start:start + size], total
+        # 实时决策状态同步到推送计划清单：按关联批次找到规则并带出当前状态。
+        page_rows = [
+            {**row, "实时决策状态": freqctrl.synced_rule_status(str(row.get("方案编号", "")))}
+            for row in rows[start:start + size]
+        ]
+        return page_rows, total
 
     def get_entry(self, entry_id: int) -> dict[str, Any] | None:
         return store.find(MODULE, entry_id)

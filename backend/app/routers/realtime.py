@@ -6,11 +6,13 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query
 
 from app.schemas import ActionResult, EntryPayload, PageResult
+from app.services.freqctrl import DiscretionError, FreqctrlService
 from app.services.realtime import RealtimeService
 
 router = APIRouter(prefix="/api/realtime", tags=["实时决策"])
 
 service = RealtimeService()
+freqctrl = FreqctrlService()
 
 LIST_FIELDS = ["规则编号", "触发事件", "决策条件", "执行动作", "冷却时间秒", "优先级", "分流比例", "生效时段"]
 STATUSES = ["草稿", "规则评审中", "已生效", "已暂停"]
@@ -56,6 +58,42 @@ def run_action(entry_id: int, payload: EntryPayload) -> ActionResult:
     if entry is None:
         return ActionResult(ok=False, message=message)
     return ActionResult(ok=True, message=message, entry=entry)
+
+
+@router.get("/{entry_id}/discretion")
+def discretion_overview(entry_id: int) -> dict[str, Any]:
+    """频控窗口裁量总览：推送批次现状、目标人群变化记录与已登记核对表。"""
+    overview = freqctrl.discretion_overview(entry_id)
+    if overview is None:
+        raise HTTPException(status_code=404, detail=f"决策规则 {entry_id} 不存在或已归档")
+    return overview
+
+
+@router.post("/{entry_id}/discretion/refresh", response_model=ActionResult)
+def refresh_discretion(entry_id: int, payload: EntryPayload) -> ActionResult:
+    """按进出人群生成窗口裁量表；链路异常时返回数据版本断点，且不改写已发送与冷却中记录。"""
+    try:
+        checklist, message = freqctrl.refresh_discretion(entry_id, payload.values)
+    except DiscretionError as error:
+        detail = error.message
+        if error.version_breakpoint is not None:
+            detail = f"{detail}（数据版本断点：v{error.version_breakpoint}）"
+        return ActionResult(ok=False, message=detail)
+    return ActionResult(ok=True, message=message, entry=checklist)
+
+
+@router.get("/{entry_id}/discretion/versions/{version}")
+def discretion_by_version(entry_id: int, version: int) -> dict[str, Any]:
+    """按数据版本回查裁量刷新后登记的频控窗口裁量核对表。"""
+    rule, items = freqctrl.checklists_by_version(entry_id, version)
+    if rule is None:
+        raise HTTPException(status_code=404, detail=f"决策规则 {entry_id} 不存在或已归档")
+    return {
+        "规则编号": rule.get("规则编号"),
+        "数据版本": version,
+        "items": items,
+        "total": len(items),
+    }
 
 
 @router.get("/export")

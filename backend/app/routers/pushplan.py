@@ -6,11 +6,13 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query
 
 from app.schemas import ActionResult, EntryPayload, PageResult
+from app.services.freqctrl import FreqctrlService
 from app.services.pushplan import PushplanService
 
 router = APIRouter(prefix="/api/pushplan", tags=["推送计划"])
 
 service = PushplanService()
+freqctrl = FreqctrlService()
 
 LIST_FIELDS = ["方案编号", "推送内容", "目标人群", "推送渠道", "推送时间", "频控策略", "AB分组标识", "预计触达量"]
 STATUSES = ["草稿", "方案审批中", "执行中", "已完成", "已撤回"]
@@ -56,6 +58,15 @@ def run_action(entry_id: int, payload: EntryPayload) -> ActionResult:
     if entry is None:
         return ActionResult(ok=False, message=message)
     return ActionResult(ok=True, message=message, entry=entry)
+
+
+@router.get("/{entry_id}/pending-details")
+def pending_details(entry_id: int) -> dict[str, Any]:
+    """推送计划待处理明细：登记在案的频控窗口裁量核对表与推送批次现状。"""
+    details = freqctrl.plan_pending_details(entry_id)
+    if details is None:
+        raise HTTPException(status_code=404, detail=f"推送方案 {entry_id} 不存在或已归档")
+    return details
 
 
 @router.get("/export")

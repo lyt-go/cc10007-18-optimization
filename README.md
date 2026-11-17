@@ -75,5 +75,22 @@ npm run dev
 - 列表接口统一返回 `{ items, total, page, size }`，动作接口统一返回 `{ ok, message }`。
 - 状态流转只允许在 `app/services` 里改，路由层不做业务判断。
 
+## 频控窗口裁量
+
+实时决策与推送计划之间按「进出人群」做差异化刷新，避免目标人群调整后重放整批用户：
+
+- 数据表：`pushbatch`（推送批次，含每用户状态与冷却截止时间）、
+  `audiencechange`（用于效率改进的目标人群变化记录）、
+  `freqctrl`（频控窗口裁量核对表，可用于结算）。
+- `GET  /api/realtime/{id}/discretion`：裁量总览（批次现状、变化记录、已登记核对表）。
+- `POST /api/realtime/{id}/discretion/refresh`：按受影响记录读取触发事件，计算频控后的
+  推送名单并登记核对表。只替换真正进入或离开目标人群的用户，保留其他用户的冷却截止
+  时间；进出人群记录与已完成动作分别记录；重复提交只登记一份；刷新失败返回数据版本
+  断点且不改写已发送与冷却中记录；同一分流批次的推送名单只对应一套人群快照。
+- `GET  /api/realtime/{id}/discretion/versions/{version}`：按数据版本回查核对表。
+- `GET  /api/pushplan/{id}/pending-details`：推送计划待处理明细（登记在案的核对表与
+  批次现状）；推送计划清单同步展示关联实时决策规则的状态。
+- 回归测试：`cd backend && .venv/bin/pip install -r requirements-dev.txt && .venv/bin/python -m pytest tests/`
+
 领域：数据工程
 子方向：数据分析与数据应用
